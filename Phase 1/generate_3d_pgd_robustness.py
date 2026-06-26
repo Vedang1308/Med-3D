@@ -23,7 +23,7 @@ def generate_3d_pgd_perturbation(model, clean_volume, input_ids, labels, epsilon
         # Forward pass through M3D-LaMed
         # Causal language models compute loss internally when provided with input_ids and labels.
         # labels should have -100 for the prompt tokens and the actual token IDs for the target response.
-        outputs = model(pixel_values=adv_volume, input_ids=input_ids, labels=labels) 
+        outputs = model(images=adv_volume, input_ids=input_ids, labels=labels) 
         
         # Extract the causal LM loss (cross-entropy over the target response tokens)
         loss = outputs.loss

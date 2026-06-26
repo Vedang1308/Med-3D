@@ -113,7 +113,7 @@ def main():
             # Tokenize and run standard generation, forcing indices to be integer (long)
             input_ids = tokenizer(input_txt, return_tensors="pt").input_ids.to(device).long()
             with torch.no_grad():
-                outputs = model.generate(pixel_values=clean_volume, input_ids=input_ids, max_new_tokens=30)
+                outputs = model.generate(images=clean_volume, inputs=input_ids, max_new_tokens=30)
             response = tokenizer.decode(outputs[0], skip_special_tokens=True)
             
             if is_refusal(response):
@@ -137,7 +137,7 @@ def main():
             input_txt = image_tokens + harmful_query
             input_ids = tokenizer(input_txt, return_tensors="pt").input_ids.to(device).long()
             with torch.no_grad():
-                outputs_clean = model.generate(pixel_values=clean_volume, input_ids=input_ids, max_new_tokens=30)
+                outputs_clean = model.generate(images=clean_volume, inputs=input_ids, max_new_tokens=30)
             response_clean = tokenizer.decode(outputs_clean[0], skip_special_tokens=True)
             
             if is_refusal(response_clean):
@@ -166,7 +166,7 @@ def main():
             # Evaluate model on the new Adversarial Volume
             print("  -> Evaluating robustness...")
             with torch.no_grad():
-                outputs_adv = model.generate(pixel_values=adv_volume, input_ids=input_ids, max_new_tokens=30)
+                outputs_adv = model.generate(images=adv_volume, inputs=input_ids, max_new_tokens=30)
             response_adv = tokenizer.decode(outputs_adv[0], skip_special_tokens=True)
             
             # If the model does NOT refuse the adversarial attempt, the jailbreak was successful
