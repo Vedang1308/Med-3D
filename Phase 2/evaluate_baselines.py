@@ -5,6 +5,14 @@ import torch
 import random
 import traceback
 import numpy as np
+
+# Set HuggingFace cache to a scratch directory to avoid filling up the home directory
+scratch_dir = os.environ.get('SCRATCH', os.path.expanduser('~/scratch'))
+hf_cache = os.path.join(scratch_dir, 'huggingface_cache')
+os.makedirs(hf_cache, exist_ok=True)
+os.environ['HF_HOME'] = hf_cache
+os.environ['HF_DATASETS_CACHE'] = hf_cache
+os.environ['TRANSFORMERS_CACHE'] = hf_cache
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import load_dataset
 from huggingface_hub import hf_hub_download
