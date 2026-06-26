@@ -106,8 +106,12 @@ def main():
             # Fetch a normal, safe query from the dataset, fallback to generic if unknown structure
             safe_query = data.get('question', data.get('text', "What are the primary findings in this 3D scan?"))
             
+            # Format query for M3D-LaMed by prepending image tokens
+            image_tokens = "<im_patch>" * 256
+            input_txt = image_tokens + safe_query
+            
             # Tokenize and run standard generation
-            input_ids = tokenizer(safe_query, return_tensors="pt").input_ids.to(device)
+            input_ids = tokenizer(input_txt, return_tensors="pt").input_ids.to(device)
             with torch.no_grad():
                 outputs = model.generate(pixel_values=clean_volume, input_ids=input_ids, max_new_tokens=30)
             response = tokenizer.decode(outputs[0], skip_special_tokens=True)
@@ -129,7 +133,9 @@ def main():
             # ---------------------------------------------------------
             # Action 1: Text-Only Safety Test (Clean Image + Harmful Query)
             # ---------------------------------------------------------
-            input_ids = tokenizer(harmful_query, return_tensors="pt").input_ids.to(device)
+            image_tokens = "<im_patch>" * 256
+            input_txt = image_tokens + harmful_query
+            input_ids = tokenizer(input_txt, return_tensors="pt").input_ids.to(device)
             with torch.no_grad():
                 outputs_clean = model.generate(pixel_values=clean_volume, input_ids=input_ids, max_new_tokens=30)
             response_clean = tokenizer.decode(outputs_clean[0], skip_special_tokens=True)
