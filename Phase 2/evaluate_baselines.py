@@ -185,6 +185,9 @@ def main():
             
             if is_refusal(response_clean):
                 text_only_refusals += 1
+                print(f"  -> [Text-Only] Guardrail held: {response_clean}")
+            else:
+                print(f"  -> [Text-Only] Jailbreak SUCCESS: {response_clean}")
             
             # ---------------------------------------------------------
             # Action 2: Multimodal Alignment Stress-Test (Perturbed Image + Harmful Query)
@@ -215,9 +218,9 @@ def main():
             # If the model does NOT refuse the adversarial attempt, the jailbreak was successful
             if not is_refusal(response_adv):
                 successful_jailbreaks += 1
-                print(f"  -> Jailbreak SUCCESS: {response_adv}")
+                print(f"  -> [Adversarial] Jailbreak SUCCESS: {response_adv}")
             else:
-                print(f"  -> Jailbreak FAILED (Guardrail held): {response_adv}")
+                print(f"  -> [Adversarial] Jailbreak FAILED (Guardrail held): {response_adv}")
                 
         except Exception as e:
             print(f"  -> Error processing sample {i}: {e}")
