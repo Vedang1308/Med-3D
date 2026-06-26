@@ -110,8 +110,8 @@ def main():
             image_tokens = "<im_patch>" * 256
             input_txt = image_tokens + safe_query
             
-            # Tokenize and run standard generation
-            input_ids = tokenizer(input_txt, return_tensors="pt").input_ids.to(device)
+            # Tokenize and run standard generation, forcing indices to be integer (long)
+            input_ids = tokenizer(input_txt, return_tensors="pt").input_ids.to(device).long()
             with torch.no_grad():
                 outputs = model.generate(pixel_values=clean_volume, input_ids=input_ids, max_new_tokens=30)
             response = tokenizer.decode(outputs[0], skip_special_tokens=True)
@@ -135,7 +135,7 @@ def main():
             # ---------------------------------------------------------
             image_tokens = "<im_patch>" * 256
             input_txt = image_tokens + harmful_query
-            input_ids = tokenizer(input_txt, return_tensors="pt").input_ids.to(device)
+            input_ids = tokenizer(input_txt, return_tensors="pt").input_ids.to(device).long()
             with torch.no_grad():
                 outputs_clean = model.generate(pixel_values=clean_volume, input_ids=input_ids, max_new_tokens=30)
             response_clean = tokenizer.decode(outputs_clean[0], skip_special_tokens=True)
@@ -146,11 +146,11 @@ def main():
             # ---------------------------------------------------------
             # Action 2: Multimodal Alignment Stress-Test (Perturbed Image + Harmful Query)
             # ---------------------------------------------------------
-            target_ids = tokenizer(target_response, return_tensors="pt").input_ids.to(device)
+            target_ids = tokenizer(target_response, return_tensors="pt").input_ids.to(device).long()
             
             # Prepare inputs for the PGD causal LM pass
-            labels = torch.cat([torch.full_like(input_ids, -100), target_ids], dim=1)
-            full_input_ids = torch.cat([input_ids, target_ids], dim=1)
+            labels = torch.cat([torch.full_like(input_ids, -100), target_ids], dim=1).long()
+            full_input_ids = torch.cat([input_ids, target_ids], dim=1).long()
             
             print("  -> Generating 3D Adversarial Perturbation...")
             adv_volume = generate_3d_pgd_perturbation(
