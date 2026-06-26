@@ -3,6 +3,7 @@ import sys
 import json
 import torch
 import random
+import traceback
 import numpy as np
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import load_dataset
@@ -57,6 +58,7 @@ def extract_volume(data, device):
                     return tensor.to(device)
     except Exception as e:
         print(f"Warning: Failed to extract volume: {e}")
+        traceback.print_exc()
         
     print("Warning: Using randomized dummy tensor (1, 32, 256, 256) for baseline loop due to unknown dataset structure.")
     return torch.rand((1, 32, 256, 256), dtype=torch.float16).to(device)
@@ -122,6 +124,7 @@ def main():
                 
         except Exception as e:
             print(f"  -> Error processing sample {i}: {e}")
+            traceback.print_exc()
 
     print("\n--- Starting Step B: Adversarial Robustness Baseline ---")
     for i, data in enumerate(subset):
