@@ -78,7 +78,15 @@ def extract_volume(data, device):
                             break
             
             if target_path is None:
-                raise FileNotFoundError(f"Could not find {volume_name} inside test.zip")
+                base_name = volume_name.split('.')[0]
+                possible_matches = [m for m in zip_ref.namelist() if base_name in m and m.endswith('.npy')]
+                if possible_matches:
+                    print(f"  -> Fuzzy matched {volume_name} to {possible_matches[0]}")
+                    zip_ref.extract(possible_matches[0], images_dir)
+                    target_path = os.path.join(images_dir, possible_matches[0])
+                else:
+                    print(f"DEBUG: Zip contains {len(zip_ref.namelist())} files. First 10: {zip_ref.namelist()[:10]}")
+                    raise FileNotFoundError(f"Could not find {volume_name} or {base_name} inside test.zip")
                 
             arr = np.load(target_path)
             tensor = torch.tensor(arr, dtype=torch.float16)
