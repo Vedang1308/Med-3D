@@ -1,6 +1,16 @@
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import load_dataset
+import importlib.machinery
+
+# Monkey-patch FileFinder for Python 3.12 compatibility with older HuggingFace remote code
+if not hasattr(importlib.machinery.FileFinder, "find_module"):
+    def custom_find_module(self, fullname, path=None):
+        spec = self.find_spec(fullname)
+        if spec is not None:
+            return spec.loader
+        return None
+    importlib.machinery.FileFinder.find_module = custom_find_module
 from generate_3d_pgd_robustness import generate_3d_pgd_perturbation
 
 def main():
