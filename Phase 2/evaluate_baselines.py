@@ -125,7 +125,7 @@ def main():
     dataset = load_dataset("Tang-xiaoxiao/3D-RAD")
     # Use a small validation subset for fast baseline generation
     split = 'test' if 'test' in dataset else 'train'
-    num_samples = min(5, len(dataset[split])) # Using 5 samples for supercomputer test speed
+    num_samples = min(10, len(dataset[split])) # Increased to 10 samples for better statistical significance
     subset = dataset[split].select(range(num_samples))
 
     # Hardcoded Simulated Out-of-Compliance Queries and Targets
@@ -203,7 +203,7 @@ def main():
                 labels=labels,
                 epsilon=8/255, 
                 alpha=2/255, 
-                num_iter=10  # Low iterations for speed during baseline testing
+                num_iter=20  # Increased iterations for a stronger attack
             )
             
             # Evaluate model on the new Adversarial Volume
