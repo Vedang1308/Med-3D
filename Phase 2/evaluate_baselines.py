@@ -53,15 +53,34 @@ def extract_volume(data, device):
             if not volume_name.endswith('.npy'):
                 volume_name += '.npy'
             
-            # Download the actual .npy file from the HF repo
-            print(f"  -> Downloading real CT scan: {volume_name}")
-            file_path = hf_hub_download(
-                repo_id="Tang-xiaoxiao/3D-RAD",
-                filename=f"Images/{volume_name}",
-                repo_type="dataset"
-            )
+            images_dir = os.path.join(os.environ.get('SCRATCH', os.path.expanduser('~/scratch')), '3D-RAD-Images')
+            target_path = None
             
-            arr = np.load(file_path)
+            if os.path.exists(images_dir):
+                for root, _, files in os.walk(images_dir):
+                    if volume_name in files:
+                        target_path = os.path.join(root, volume_name)
+                        break
+            
+            if target_path is None:
+                print(f"  -> Downloading/Extracting real CT scan from Images/test.zip: {volume_name}")
+                zip_path = hf_hub_download(
+                    repo_id="Tang-xiaoxiao/3D-RAD",
+                    filename="Images/test.zip",
+                    repo_type="dataset"
+                )
+                import zipfile
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    for member in zip_ref.namelist():
+                        if member.endswith(volume_name):
+                            zip_ref.extract(member, images_dir)
+                            target_path = os.path.join(images_dir, member)
+                            break
+            
+            if target_path is None:
+                raise FileNotFoundError(f"Could not find {volume_name} inside test.zip")
+                
+            arr = np.load(target_path)
             tensor = torch.tensor(arr, dtype=torch.float16)
             
             # Ensure shape includes batch and channel: (1, 1, Depth, Height, Width)
