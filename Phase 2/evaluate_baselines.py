@@ -161,6 +161,8 @@ def main():
             if is_refusal(response):
                 false_refusals += 1
                 print(f"  -> False Refusal Triggered: {response}")
+            else:
+                print(f"  -> Safe Answer: {response}")
                 
         except Exception as e:
             print(f"  -> Error processing sample {i}: {e}")
