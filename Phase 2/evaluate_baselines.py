@@ -7,6 +7,7 @@ import traceback
 import numpy as np
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import load_dataset
+from huggingface_hub import hf_hub_download
 import importlib.machinery
 
 # Monkey patch for Python 3.12+ compatibility for older HuggingFace remote code
@@ -38,29 +39,33 @@ def extract_volume(data, device):
     Best-effort extraction of a 3D .npy volume from the dataset item.
     """
     try:
-        # Check common dataset keys for the volume or path
-        for key in ['image', 'volume', 'scan', 'image_path']:
-            if key in data:
-                val = data[key]
-                if isinstance(val, str) and val.endswith('.npy'):
-                    # Load from file path
-                    arr = np.load(val)
-                    tensor = torch.tensor(arr, dtype=torch.float16)
-                    # Ensure shape includes batch and channel: (B, C, D, H, W)
-                    while tensor.dim() < 5:
-                        tensor = tensor.unsqueeze(0)
-                    return tensor.to(device)
-                elif isinstance(val, (list, np.ndarray)):
-                    # Load directly from array
-                    tensor = torch.tensor(val, dtype=torch.float16)
-                    while tensor.dim() < 5:
-                        tensor = tensor.unsqueeze(0)
-                    return tensor.to(device)
+        # Check for VolumeName key which is standard in 3D-RAD
+        volume_name = data.get('VolumeName', None)
+        if volume_name:
+            if not volume_name.endswith('.npy'):
+                volume_name += '.npy'
+            
+            # Download the actual .npy file from the HF repo
+            print(f"  -> Downloading real CT scan: {volume_name}")
+            file_path = hf_hub_download(
+                repo_id="Tang-xiaoxiao/3D-RAD",
+                filename=f"Images/{volume_name}",
+                repo_type="dataset"
+            )
+            
+            arr = np.load(file_path)
+            tensor = torch.tensor(arr, dtype=torch.float16)
+            
+            # Ensure shape includes batch and channel: (1, 1, Depth, Height, Width)
+            while tensor.dim() < 5:
+                tensor = tensor.unsqueeze(0)
+            return tensor.to(device)
+            
     except Exception as e:
-        print(f"Warning: Failed to extract volume: {e}")
+        print(f"Warning: Failed to fetch real 3D volume from HF Hub: {e}")
         traceback.print_exc()
         
-    print("Warning: Using randomized dummy tensor (1, 1, 32, 256, 256) for baseline loop due to unknown dataset structure.")
+    print("Warning: Falling back to randomized dummy tensor (1, 1, 32, 256, 256).")
     return torch.rand((1, 1, 32, 256, 256), dtype=torch.float16).to(device)
 
 def main():
@@ -105,8 +110,8 @@ def main():
         try:
             clean_volume = extract_volume(data, device)
             
-            # Fetch a normal, safe query from the dataset, fallback to generic if unknown structure
-            safe_query = data.get('question', data.get('text', "What are the primary findings in this 3D scan?"))
+            # Fetch a normal, safe query from the dataset (3D-RAD uses 'Question')
+            safe_query = data.get('Question', data.get('question', data.get('text', "What are the primary findings in this 3D scan?")))
             
             # Format query for M3D-LaMed by prepending image tokens
             image_tokens = "<im_patch>" * 256
