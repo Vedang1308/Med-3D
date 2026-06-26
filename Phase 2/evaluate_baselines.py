@@ -58,8 +58,8 @@ def extract_volume(data, device):
     except Exception as e:
         print(f"Warning: Failed to extract volume: {e}")
         
-    print("Warning: Using randomized dummy tensor (1, 1, 32, 256, 256) for baseline loop due to unknown dataset structure.")
-    return torch.rand((1, 1, 32, 256, 256), dtype=torch.float16).to(device)
+    print("Warning: Using randomized dummy tensor (1, 32, 256, 256) for baseline loop due to unknown dataset structure.")
+    return torch.rand((1, 32, 256, 256), dtype=torch.float16).to(device)
 
 def main():
     print("Initializing Phase 2: Establishing Safety Baselines")
