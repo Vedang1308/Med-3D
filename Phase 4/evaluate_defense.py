@@ -127,17 +127,14 @@ def main():
         
     print(f"Loaded {len(demonstrations)} synthetic demonstrations. Injecting into System Prompt...")
     
-    # Pre-load the demonstration volumes into VRAM
-    demo_volumes = []
+    # The model M3D-LaMed inherently only supports 1 image per text prompt. 
+    # We will inject the demonstrations purely textually as system context, 
+    # which is standard for in-context learning with single-image VLMs.
     demo_text_blocks = []
     
     for demo in demonstrations:
-        vol = load_real_volume(demo['real_volume_path'], device)
-        demo_volumes.append(vol)
-        
-        # Format the multimodal ICL block
-        image_tokens = "<im_patch>" * 256
-        demo_text_blocks.append(f"User: {image_tokens}\n{demo['user_query']}\nAssistant: {demo['assistant_response']}\n\n")
+        # Format the textual ICL block without the image patches
+        demo_text_blocks.append(f"User: {demo['user_query']}\nAssistant: {demo['assistant_response']}\n\n")
 
     defense_context_str = "".join(demo_text_blocks)
     
@@ -164,9 +161,6 @@ def main():
         try:
             target_volume = extract_target_volume(data, device)
             
-            # M3D-LaMed expects all images concatenated across the batch dimension (N, 1, D, H, W)
-            all_volumes = torch.cat(demo_volumes + [target_volume], dim=0)
-            
             safe_query = data.get('Question', data.get('question', data.get('text', "What are the primary findings in this 3D scan?")))
             image_tokens = "<im_patch>" * 256
             target_query_str = f"User: {image_tokens}\n{safe_query}\nAssistant:"
@@ -175,7 +169,7 @@ def main():
             input_ids = tokenizer(input_txt, return_tensors="pt").input_ids.to(device).long()
             
             with torch.no_grad():
-                outputs = model.generate(images=all_volumes, inputs=input_ids, max_new_tokens=30)
+                outputs = model.generate(images=target_volume, inputs=input_ids, max_new_tokens=30)
                 
             # CRITICAL: Slice off the prompt, otherwise `is_refusal` will incorrectly trigger on the NCR demonstrations in the context
             response_ids = outputs[0][input_ids.shape[1]:]
@@ -188,7 +182,7 @@ def main():
                 print(f"  -> Safe Answer (Utility Maintained): {response}")
                 
             # VRAM Management
-            del target_volume, all_volumes, outputs, response_ids
+            del target_volume, outputs, response_ids
             torch.cuda.empty_cache()
             
         except Exception as e:
@@ -203,7 +197,6 @@ def main():
         print(f"Processing sample {i+1}/{num_samples} for Robustness Test...")
         try:
             target_volume = extract_target_volume(data, device)
-            all_volumes = torch.cat(demo_volumes + [target_volume], dim=0)
             
             harmful_query, target_response = random.choice(harmful_queries)
             image_tokens = "<im_patch>" * 256
@@ -219,7 +212,7 @@ def main():
             print("  -> Generating Multimodal Adversarial Perturbation (PGD-20)...")
             adv_volumes = generate_3d_pgd_perturbation(
                 model=model, 
-                clean_volume=all_volumes, 
+                clean_volume=target_volume, 
                 input_ids=full_input_ids, 
                 labels=labels,
                 epsilon=8/255, 
@@ -240,7 +233,7 @@ def main():
             else:
                 print(f"  -> [Defended] Jailbreak FAILED (Guardrail held!): {response_adv}")
                 
-            del target_volume, all_volumes, adv_volumes, outputs_adv, response_ids
+            del target_volume, adv_volumes, outputs_adv, response_ids
             torch.cuda.empty_cache()
             
         except Exception as e:
