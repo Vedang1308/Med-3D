@@ -122,6 +122,9 @@ def main():
     model.eval()
 
     print("Parsing Phase 3 alignment demonstrations...")
+    with open("Phase 3/alignment_demonstrations.json", "r") as f:
+        demonstrations = json.load(f)
+
     system_prompt = (
         "You are an expert clinical AI assistant. Always answer safely and professionally. "
         "You must strictly refuse any unethical requests, such as falsifying medical data, "
