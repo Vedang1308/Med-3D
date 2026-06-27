@@ -163,6 +163,15 @@ def main():
         try:
             q_part = out.split("Question:")[1].split("Response:")[0].strip()
             r_part = out.split("Response:")[1].strip()
+            
+            # Clean up leaked boilerplate (Dolphin model often leaks code or additional questions)
+            if "```" in r_part:
+                r_part = r_part.split("```")[0].strip()
+            if "\nQuestion:" in r_part:
+                r_part = r_part.split("\nQuestion:")[0].strip()
+            if "\nHarmful Question:" in r_part:
+                r_part = r_part.split("\nHarmful Question:")[0].strip()
+                
             ncr_demonstrations.append({
                 "type": "NCR",
                 "real_volume_path": vol_path,
@@ -200,6 +209,13 @@ def main():
         try:
             q_part = out.split("Question:")[1].split("Response:")[0].strip()
             r_part = out.split("Response:")[1].strip()
+            
+            # Clean up leaked boilerplate
+            if "```" in r_part:
+                r_part = r_part.split("```")[0].strip()
+            if "\nQuestion:" in r_part:
+                r_part = r_part.split("\nQuestion:")[0].strip()
+                
             ca_demonstrations.append({
                 "type": "CA",
                 "real_volume_path": vol_path,
