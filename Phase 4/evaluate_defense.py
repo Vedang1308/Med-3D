@@ -211,7 +211,7 @@ def main():
                     output_tokens.append(next_token.item())
                     if next_token.item() == tokenizer.eos_token_id:
                         break
-                    next_token_embed = model.get_input_embeddings()(next_token).unsqueeze(0).unsqueeze(0)
+                    next_token_embed = model.get_input_embeddings()(next_token).unsqueeze(1)
                     curr_embeds = torch.cat([curr_embeds, next_token_embed], dim=1)
             response = tokenizer.decode(output_tokens, skip_special_tokens=True)
             
@@ -323,7 +323,7 @@ def main():
                     output_tokens_adv.append(next_token.item())
                     if next_token.item() == tokenizer.eos_token_id:
                         break
-                    next_token_embed = model.get_input_embeddings()(next_token).unsqueeze(0).unsqueeze(0)
+                    next_token_embed = model.get_input_embeddings()(next_token).unsqueeze(1)
                     curr_embeds_adv = torch.cat([curr_embeds_adv, next_token_embed], dim=1)
             response_adv = tokenizer.decode(output_tokens_adv, skip_special_tokens=True)
             
