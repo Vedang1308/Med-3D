@@ -132,7 +132,7 @@ def main():
     )
     sys_txt = f"[INST] <<SYS>>\n{system_prompt}\n<</SYS>>\n\n"
     sys_ids = tokenizer(sys_txt, return_tensors="pt").input_ids.to(device).long()
-    sys_embeds = model.get_input_embeddings()(sys_ids)
+    sys_embeds = model.get_input_embeddings()(sys_ids).detach()
     
     # Pre-process demonstrations into unified embeddings
     demo_embeds_list = []
@@ -152,9 +152,8 @@ def main():
             labels=None,
             images=vol
         )
-        # Unpack the returned tuple from M3D-LaMed / LLaVA architecture
         _, _, _, _, inputs_embeds, _ = ret
-        demo_embeds_list.append(inputs_embeds)
+        demo_embeds_list.append(inputs_embeds.detach())
         
         del vol, demo_ids, ret
         torch.cuda.empty_cache()
@@ -200,11 +199,33 @@ def main():
             # Splicing: [System Prompt] + [Demo Embeds...] + [Target Embed]
             final_embeds = torch.cat([sys_embeds] + demo_embeds_list + [target_embeds], dim=1)
             
+            # To bypass `inputs_embeds` rejection in generate(), we temporarily hook the embedding layer
+            orig_embeds = model.get_input_embeddings()
+            
+            class InjectedEmbeddings(torch.nn.Module):
+                def __init__(self, orig, custom):
+                    super().__init__()
+                    self.orig = orig
+                    self.custom = custom
+                    self.used = False
+                def forward(self, input_ids, **kwargs):
+                    if not self.used and input_ids.shape[1] == self.custom.shape[1]:
+                        self.used = True
+                        return self.custom
+                    return self.orig(input_ids, **kwargs)
+            
+            model.set_input_embeddings(InjectedEmbeddings(orig_embeds, final_embeds))
+            dummy_ids = torch.zeros((1, final_embeds.shape[1]), dtype=torch.long, device=device)
+            
             with torch.no_grad():
-                outputs = model.generate(inputs_embeds=final_embeds, max_new_tokens=30)
+                # DO NOT pass images, so it skips the internal multimodal logic and just uses our hooked embeddings!
+                outputs = model.generate(input_ids=dummy_ids, max_new_tokens=30)
                 
-            # Manual generation returns only the new tokens when inputs_embeds is used
-            response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+            model.set_input_embeddings(orig_embeds)
+                
+            # Manual generation returns the dummy prompt + new tokens, so slice it off
+            response_ids = outputs[0][dummy_ids.shape[1]:]
+            response = tokenizer.decode(response_ids, skip_special_tokens=True)
             
             if is_refusal(response):
                 false_refusals += 1
@@ -252,6 +273,8 @@ def main():
             delta.requires_grad = True
             
             target_resp_ids = tokenizer(target_response, return_tensors="pt").input_ids.to(device).long()
+            # Detach the target response embeddings so they don't hold a graph history across PGD iterations
+            target_resp_embeds = model.get_input_embeddings()(target_resp_ids).detach()
             
             # Freeze model
             model.eval()
@@ -267,9 +290,6 @@ def main():
                     past_key_values=None, labels=None, images=adv_volume
                 )
                 _, _, _, _, target_embeds, _ = ret
-                
-                # Get embeddings for the target response tokens
-                target_resp_embeds = model.get_input_embeddings()(target_resp_ids)
                 
                 # Splice for the forward pass
                 full_embeds = torch.cat([sys_embeds] + demo_embeds_list + [target_embeds, target_resp_embeds], dim=1)
@@ -301,10 +321,17 @@ def main():
             
             final_embeds_adv = torch.cat([sys_embeds] + demo_embeds_list + [target_embeds_adv], dim=1)
             
+            orig_embeds = model.get_input_embeddings()
+            model.set_input_embeddings(InjectedEmbeddings(orig_embeds, final_embeds_adv))
+            dummy_ids_adv = torch.zeros((1, final_embeds_adv.shape[1]), dtype=torch.long, device=device)
+            
             with torch.no_grad():
-                outputs_adv = model.generate(inputs_embeds=final_embeds_adv, max_new_tokens=30)
+                outputs_adv = model.generate(input_ids=dummy_ids_adv, max_new_tokens=30)
                 
-            response_adv = tokenizer.decode(outputs_adv[0], skip_special_tokens=True)
+            model.set_input_embeddings(orig_embeds)
+                
+            response_ids_adv = outputs_adv[0][dummy_ids_adv.shape[1]:]
+            response_adv = tokenizer.decode(response_ids_adv, skip_special_tokens=True)
             
             if not is_refusal(response_adv):
                 successful_jailbreaks += 1
