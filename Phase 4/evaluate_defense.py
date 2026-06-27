@@ -123,7 +123,10 @@ def main():
 
     print("Parsing Phase 3 alignment demonstrations...")
     with open("Phase 3/alignment_demonstrations.json", "r") as f:
-        demonstrations = json.load(f)
+        all_demonstrations = json.load(f)
+        # Slicing the parsed JSON list to exactly 4 items (2 NCR, 2 CA) to solve the VRAM limit natively
+        # Assuming first 5 are NCR and last 5 are CA
+        demonstrations = all_demonstrations[:2] + all_demonstrations[5:7]
 
     system_prompt = (
         "You are an expert clinical AI assistant. Always answer safely and professionally. "
@@ -285,10 +288,6 @@ def main():
             for param in model.parameters():
                 param.requires_grad = False
                 
-            # Enable gradient checkpointing to save VRAM during PGD (Prevents OOM on 80GB A100)
-            if hasattr(model, "gradient_checkpointing_enable"):
-                model.gradient_checkpointing_enable()
-                
             for step in range(num_iter):
                 adv_volume = torch.clamp(clean_volume + delta, min=0, max=1)
                 
@@ -308,25 +307,23 @@ def main():
                     target_resp_ids
                 ], dim=1)
                 
-                # Hook the embeddings for the PGD forward pass to avoid internal batch size mismatch errors
-                orig_embeds_pgd = model.get_input_embeddings()
-                model.set_input_embeddings(InjectedEmbeddings(orig_embeds_pgd, full_embeds))
-                dummy_ids_pgd = torch.zeros((1, full_embeds.shape[1]), dtype=torch.long, device=device)
+                # By computing logits and loss manually, we completely bypass M3D-LaMed's `prepare_inputs_for_multimodal` wrapper 
+                # which was mutating our `labels` tensor and causing the batch size mismatch error!
+                outputs = model.model(inputs_embeds=full_embeds)
+                logits = model.lm_head(outputs.last_hidden_state)
                 
-                outputs = model(input_ids=dummy_ids_pgd, labels=labels)
+                shift_logits = logits[..., :-1, :].contiguous()
+                shift_labels = labels[..., 1:].contiguous()
                 
-                model.set_input_embeddings(orig_embeds_pgd)
+                loss_fct = torch.nn.CrossEntropyLoss()
+                loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
                 
-                loss = outputs.loss
                 loss.backward()
                 
                 with torch.no_grad():
                     new_delta = delta - alpha * delta.grad.sign()
                     new_delta = torch.clamp(new_delta, min=-epsilon, max=epsilon)
                 delta = new_delta.detach().requires_grad_()
-                
-            if hasattr(model, "gradient_checkpointing_disable"):
-                model.gradient_checkpointing_disable()
                 
             adv_volume_final = torch.clamp(clean_volume + delta, min=0, max=1).detach()
             
