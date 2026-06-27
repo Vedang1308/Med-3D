@@ -208,20 +208,22 @@ def main():
                     self.orig = orig
                     self.custom = custom
                     self.used = False
-                def forward(self, input_ids, **kwargs):
+                def forward(self, *args, **kwargs):
+                    input_tensor = args[0] if len(args) > 0 else kwargs.get("input_ids")
                     # 1. Prefill phase: generate() passes the full sequence
-                    if not self.used and input_ids.shape[1] > 1:
+                    if input_tensor is not None and not self.used and input_tensor.shape[1] > 1:
                         self.used = True
                         return self.custom
                     # 2. Autoregressive decoding phase: generate() passes newly predicted tokens one-by-one
-                    return self.orig(input_ids, **kwargs)
+                    return self.orig(*args, **kwargs)
             
             model.set_input_embeddings(InjectedEmbeddings(orig_embeds, final_embeds))
             dummy_ids = torch.zeros((1, final_embeds.shape[1]), dtype=torch.long, device=device)
             
             with torch.no_grad():
                 # DO NOT pass images, so it skips the internal multimodal logic and just uses our hooked embeddings!
-                outputs = model.generate(input_ids=dummy_ids, max_new_tokens=30)
+                # Pass dummy_ids positionally to avoid kwargs naming issues.
+                outputs = model.generate(dummy_ids, max_new_tokens=30)
                 
             model.set_input_embeddings(orig_embeds)
                 
@@ -283,6 +285,10 @@ def main():
             for param in model.parameters():
                 param.requires_grad = False
                 
+            # Enable gradient checkpointing to save VRAM during PGD (Prevents OOM on 80GB A100)
+            if hasattr(model, "gradient_checkpointing_enable"):
+                model.gradient_checkpointing_enable()
+                
             for step in range(num_iter):
                 adv_volume = torch.clamp(clean_volume + delta, min=0, max=1)
                 
@@ -302,7 +308,15 @@ def main():
                     target_resp_ids
                 ], dim=1)
                 
-                outputs = model(inputs_embeds=full_embeds, labels=labels)
+                # Hook the embeddings for the PGD forward pass to avoid internal batch size mismatch errors
+                orig_embeds_pgd = model.get_input_embeddings()
+                model.set_input_embeddings(InjectedEmbeddings(orig_embeds_pgd, full_embeds))
+                dummy_ids_pgd = torch.zeros((1, full_embeds.shape[1]), dtype=torch.long, device=device)
+                
+                outputs = model(input_ids=dummy_ids_pgd, labels=labels)
+                
+                model.set_input_embeddings(orig_embeds_pgd)
+                
                 loss = outputs.loss
                 loss.backward()
                 
@@ -310,6 +324,9 @@ def main():
                     new_delta = delta - alpha * delta.grad.sign()
                     new_delta = torch.clamp(new_delta, min=-epsilon, max=epsilon)
                 delta = new_delta.detach().requires_grad_()
+                
+            if hasattr(model, "gradient_checkpointing_disable"):
+                model.gradient_checkpointing_disable()
                 
             adv_volume_final = torch.clamp(clean_volume + delta, min=0, max=1).detach()
             
@@ -323,24 +340,12 @@ def main():
             
             final_embeds_adv = torch.cat([sys_embeds] + demo_embeds_list + [target_embeds_adv], dim=1)
             
-            class InjectedEmbeddingsAdv(torch.nn.Module):
-                def __init__(self, orig, custom):
-                    super().__init__()
-                    self.orig = orig
-                    self.custom = custom
-                    self.used = False
-                def forward(self, input_ids, **kwargs):
-                    if not self.used and input_ids.shape[1] > 1:
-                        self.used = True
-                        return self.custom
-                    return self.orig(input_ids, **kwargs)
-            
             orig_embeds = model.get_input_embeddings()
-            model.set_input_embeddings(InjectedEmbeddingsAdv(orig_embeds, final_embeds_adv))
+            model.set_input_embeddings(InjectedEmbeddings(orig_embeds, final_embeds_adv))
             dummy_ids_adv = torch.zeros((1, final_embeds_adv.shape[1]), dtype=torch.long, device=device)
             
             with torch.no_grad():
-                outputs_adv = model.generate(input_ids=dummy_ids_adv, max_new_tokens=30)
+                outputs_adv = model.generate(dummy_ids_adv, max_new_tokens=30)
                 
             model.set_input_embeddings(orig_embeds)
                 
