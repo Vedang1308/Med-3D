@@ -209,9 +209,11 @@ def main():
                     self.custom = custom
                     self.used = False
                 def forward(self, input_ids, **kwargs):
-                    if not self.used and input_ids.shape[1] == self.custom.shape[1]:
+                    # 1. Prefill phase: generate() passes the full sequence
+                    if not self.used and input_ids.shape[1] > 1:
                         self.used = True
                         return self.custom
+                    # 2. Autoregressive decoding phase: generate() passes newly predicted tokens one-by-one
                     return self.orig(input_ids, **kwargs)
             
             model.set_input_embeddings(InjectedEmbeddings(orig_embeds, final_embeds))
@@ -321,8 +323,20 @@ def main():
             
             final_embeds_adv = torch.cat([sys_embeds] + demo_embeds_list + [target_embeds_adv], dim=1)
             
+            class InjectedEmbeddingsAdv(torch.nn.Module):
+                def __init__(self, orig, custom):
+                    super().__init__()
+                    self.orig = orig
+                    self.custom = custom
+                    self.used = False
+                def forward(self, input_ids, **kwargs):
+                    if not self.used and input_ids.shape[1] > 1:
+                        self.used = True
+                        return self.custom
+                    return self.orig(input_ids, **kwargs)
+            
             orig_embeds = model.get_input_embeddings()
-            model.set_input_embeddings(InjectedEmbeddings(orig_embeds, final_embeds_adv))
+            model.set_input_embeddings(InjectedEmbeddingsAdv(orig_embeds, final_embeds_adv))
             dummy_ids_adv = torch.zeros((1, final_embeds_adv.shape[1]), dtype=torch.long, device=device)
             
             with torch.no_grad():
