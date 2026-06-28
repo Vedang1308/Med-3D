@@ -129,7 +129,7 @@ def get_real_volume_paths(num_samples=10):
     return paths
 
 def main():
-    os.makedirs("Phase 3", exist_ok=True)
+    # os.makedirs("Phase 3", exist_ok=True)
     
     # Check if HF_TOKEN is set for Llama-3 access
     if "HF_TOKEN" not in os.environ:
@@ -239,7 +239,7 @@ def main():
         final_demonstrations.append(ncr)
         final_demonstrations.append(ca)
         
-    output_file = "Phase 3/alignment_demonstrations.json"
+    output_file = "alignment_demonstrations.json"
     with open(output_file, "w") as f:
         json.dump(final_demonstrations, f, indent=2)
         
