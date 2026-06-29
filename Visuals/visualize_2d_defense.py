@@ -92,11 +92,13 @@ else:
     heatmap_rgba = colormap(norm_delta)
     heatmap_rgb = (heatmap_rgba[:, :, :3] * 255).astype(np.uint8)
 
-    # 2. Attack Overlay Blending using PIL Alpha Compositing
-    clean_pil = Image.fromarray(clean_windowed).convert("RGB")
-    heatmap_pil = Image.fromarray(heatmap_rgb)
-    # Blend: clean * 0.6 + heatmap * 0.4
-    overlay_pil = Image.blend(clean_pil, heatmap_pil, alpha=0.4)
+    # 2. True Perturbed Scan (Model Input)
+    # Apply exact same percentile windowing and scaling to the perturbed slice
+    perturbed_windowed = np.clip(perturbed_slice, p1, p99)
+    if p99 > p1:
+        perturbed_windowed = ((perturbed_windowed - p1) / (p99 - p1) * 255).astype(np.uint8)
+    else:
+        perturbed_windowed = np.zeros_like(perturbed_windowed, dtype=np.uint8)
 
 
     # --- Sidebar Controls ---
@@ -130,10 +132,10 @@ else:
             st.image(clean_windowed, caption="Original Clean 2D Scan", width="stretch")
             
         with col2:
-            st.image(heatmap_rgb, caption="True Adversarial Delta (Seismic Heatmap)", width="stretch")
+            st.image(perturbed_windowed, caption="True Perturbed Scan (Model Input)", width="stretch")
             
         with col3:
-            st.image(overlay_pil, caption="Attack Overlay (Blended)", width="stretch")
+            st.image(heatmap_rgb, caption="Amplified Attack Pattern (x50)", width="stretch")
 
     st.markdown("---")
     st.subheader("Text Processing & Model Response")
