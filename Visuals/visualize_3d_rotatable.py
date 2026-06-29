@@ -121,7 +121,7 @@ else:
         # 0 (blue) -> highly opaque, 0.5 (white/zero) -> completely transparent, 1 (red) -> highly opaque
         opacityscale=[[0, 0.9], [0.45, 0.0], [0.55, 0.0], [1, 0.9]],
         surface_count=15,
-        colorscale='bwr'
+        colorscale=[[0, 'blue'], [0.5, 'white'], [1, 'red']]
     )
     
     fig2 = go.Figure(data=[ghost_trace, noise_trace])
