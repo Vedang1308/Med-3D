@@ -84,11 +84,18 @@ else:
 
     # High-Fidelity Noise Colormapping (For the Attack Overlay)
     delta = perturbed_slice - slice_2d
-    vmax = np.percentile(np.abs(delta), 99) + 1e-5
-    norm_delta = (delta / (2 * vmax)) + 0.5
+    amplified_delta = delta * 50
+
+    # Force strict symmetric limits based on the 99th percentile of the absolute amplified delta
+    vmax = np.percentile(np.abs(amplified_delta), 99) + 1e-5
+    vmin = -vmax
+
+    # Normalize strictly to [0, 1] where 0 is -vmax, 0.5 is exactly 0 (no noise), and 1 is +vmax
+    norm_delta = (amplified_delta - vmin) / (vmax - vmin)
     norm_delta = np.clip(norm_delta, 0, 1)
 
-    colormap = plt.get_cmap('seismic')
+    # Use 'bwr' (Blue-White-Red) so 0 noise is pure white, negative is blue, positive is red.
+    colormap = plt.get_cmap('bwr')
     heatmap_rgba = colormap(norm_delta)
     heatmap_rgb = (heatmap_rgba[:, :, :3] * 255).astype(np.uint8)
 
@@ -132,10 +139,10 @@ else:
             st.image(clean_windowed, caption="Original Clean 2D Scan", width="stretch")
             
         with col2:
-            st.image(perturbed_windowed, caption="True Perturbed Scan (Model Input)", width="stretch")
+            st.image(heatmap_rgb, caption="Amplified PGD Delta (x50)", width="stretch")
             
         with col3:
-            st.image(heatmap_rgb, caption="Amplified Attack Pattern (x50)", width="stretch")
+            st.image(perturbed_windowed, caption="True Perturbed Scan (Model Input)", width="stretch")
 
     st.markdown("---")
     st.subheader("Text Processing & Model Response")
