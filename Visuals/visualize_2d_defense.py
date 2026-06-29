@@ -20,7 +20,6 @@ delta_path = st.sidebar.text_input("Path to Adversarial Delta .npy:", value=defa
 @st.cache_data
 def load_real_volume(path):
     if not os.path.exists(path):
-        st.sidebar.error(f"File not found: {path}")
         return None
     try:
         return np.load(path)
@@ -32,7 +31,11 @@ def load_real_volume(path):
 volume = load_real_volume(scan_path)
 delta_volume = load_real_volume(delta_path)
 
-if volume is not None and delta_volume is not None:
+if volume is None:
+    st.warning(f"Clean scan file not found at `{scan_path}`. Please provide a valid path.")
+elif delta_volume is None:
+    st.warning("Adversarial Delta file not found. Please run `Visuals/save_sample_delta.py` to generate the real PGD noise for this scan.")
+else:
     # --- Process Images ---
     
     # 1. Slice the Correct Anatomical Axis (Middle of Z-axis for Axial plane)
