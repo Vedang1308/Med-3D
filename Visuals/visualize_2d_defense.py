@@ -74,15 +74,20 @@ else:
     
     perturbed_slice = slice_2d + delta_slice
 
-    # Medical Windowing (HU Normalization)
-    clean_windowed = np.clip(slice_2d, -1000, 400)
-    clean_windowed = ((clean_windowed - (-1000)) / (400 - (-1000)) * 255).astype(np.uint8)
+    # Dynamic Percentile Normalization (For the Medical Scan)
+    p1, p99 = np.percentile(slice_2d, (1, 99))
+    clean_windowed = np.clip(slice_2d, p1, p99)
+    if p99 > p1:
+        clean_windowed = ((clean_windowed - p1) / (p99 - p1) * 255).astype(np.uint8)
+    else:
+        clean_windowed = np.zeros_like(clean_windowed, dtype=np.uint8)
 
-    # 1. True Delta Colormapping
-    amplified_delta = delta_slice * 50
-    max_val = np.max(np.abs(amplified_delta)) + 1e-5
-    # Normalize to [0, 1] centered at 0.5 for the diverging colormap
-    norm_delta = (amplified_delta / (2 * max_val)) + 0.5 
+    # High-Fidelity Noise Colormapping (For the Attack Overlay)
+    delta = perturbed_slice - slice_2d
+    vmax = np.percentile(np.abs(delta), 99) + 1e-5
+    norm_delta = (delta / (2 * vmax)) + 0.5
+    norm_delta = np.clip(norm_delta, 0, 1)
+
     colormap = plt.get_cmap('seismic')
     heatmap_rgba = colormap(norm_delta)
     heatmap_rgb = (heatmap_rgba[:, :, :3] * 255).astype(np.uint8)
@@ -116,19 +121,19 @@ else:
     
     if scenario_num in [1, 2]:
         st.subheader("Visual Pipeline")
-        st.image(clean_windowed, caption=f"Original Clean 2D Scan (Windowed)\nSource: {os.path.basename(scan_path)}", use_container_width=False, width=400)
+        st.image(clean_windowed, caption=f"Original Clean 2D Scan (Windowed)\nSource: {os.path.basename(scan_path)}", width="content")
     else:
         st.subheader("Adversarial Visual Pipeline")
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.image(clean_windowed, caption="Original Clean 2D Scan", use_container_width=True)
+            st.image(clean_windowed, caption="Original Clean 2D Scan", width="stretch")
             
         with col2:
-            st.image(heatmap_rgb, caption="True Adversarial Delta (Seismic Heatmap)", use_container_width=True)
+            st.image(heatmap_rgb, caption="True Adversarial Delta (Seismic Heatmap)", width="stretch")
             
         with col3:
-            st.image(overlay_pil, caption="Attack Overlay (Blended)", use_container_width=True)
+            st.image(overlay_pil, caption="Attack Overlay (Blended)", width="stretch")
 
     st.markdown("---")
     st.subheader("Text Processing & Model Response")
