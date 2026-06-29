@@ -1,7 +1,6 @@
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.ndimage import gaussian_filter
 
 st.set_page_config(page_title="2D Medical VLM Defense Dashboard", layout="wide")
 
@@ -42,8 +41,6 @@ def get_adversarial_noise(epsilon=0.15):
     """
     np.random.seed(42) # Fixed seed for consistent visualization
     noise = np.random.uniform(-epsilon, epsilon, (256, 256))
-    # Smooth it slightly to look more like targeted adversarial patches rather than static
-    noise = gaussian_filter(noise, sigma=2)
     # Normalize back to epsilon
     noise = (noise / np.max(np.abs(noise))) * epsilon
     return noise
