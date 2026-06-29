@@ -18,42 +18,67 @@ scan_path = st.sidebar.text_input("Path to Clean 3D .npy Volume:", value=default
 delta_path = st.sidebar.text_input("Path to Adversarial Delta .npy:", value=default_delta)
 
 @st.cache_data
-def load_real_volume(path):
+def load_and_extract_2d_slice(path):
+    """
+    Robust real data loading pipeline.
+    Handles dictionary objects, extra channel dimensions, and properly slices the axial plane.
+    """
     if not os.path.exists(path):
         return None
+        
     try:
-        return np.load(path)
+        loaded_data = np.load(path, allow_pickle=True)
+        
+        # 1. Handle Dictionary Formats
+        if isinstance(loaded_data, np.ndarray) and loaded_data.dtype == object:
+            data_dict = loaded_data.item()
+            volume = data_dict.get('image', data_dict.get('data', loaded_data))
+        elif isinstance(loaded_data, dict):
+            volume = loaded_data.get('image', loaded_data.get('data', loaded_data))
+        else:
+            volume = loaded_data
+
+        # 2. Squeeze out single-dimensional channel wrapper axes (e.g., [1, Z, Y, X] -> [Z, Y, X])
+        if volume.ndim == 4 and volume.shape[0] == 1:
+            volume = np.squeeze(volume, axis=0)
+        elif volume.ndim == 4 and volume.shape[-1] == 1:
+            volume = np.squeeze(volume, axis=-1)
+
+        # 3. Dynamic Axial Slicing based on remaining dimensions
+        if volume.ndim == 3:
+            # Pull the middle slice along the depth axis (Z)
+            slice_2d = volume[volume.shape[0] // 2, :, :]
+        elif volume.ndim == 2:
+            slice_2d = volume
+        else:
+            raise ValueError(f"Unexpected data shape after processing: {volume.shape}")
+            
+        return slice_2d
+        
     except Exception as e:
-        st.sidebar.error(f"Error loading numpy array: {e}")
-        return None
+        st.error(f"Failed to process real medical tensor from {path}. Error: {str(e)}")
+        st.stop()
 
-# Load the real arrays
-volume = load_real_volume(scan_path)
-delta_volume = load_real_volume(delta_path)
 
-if volume is None:
+# Load and unpack the real arrays
+slice_2d = load_and_extract_2d_slice(scan_path)
+delta_slice = load_and_extract_2d_slice(delta_path)
+
+
+if slice_2d is None:
     st.warning(f"Clean scan file not found at `{scan_path}`. Please provide a valid path.")
-elif delta_volume is None:
+elif delta_slice is None:
     st.warning("Adversarial Delta file not found. Please run `Visuals/save_sample_delta.py` to generate the real PGD noise for this scan.")
 else:
     # --- Process Images ---
     
-    # 1. Slice the Correct Anatomical Axis (Middle of Z-axis for Axial plane)
-    # Handle shape based on whether a channel dimension (C, Z, Y, X) exists
-    if len(volume.shape) == 4:
-        slice_2d = volume[0, volume.shape[1] // 2, :, :]
-        delta_slice = delta_volume[0, delta_volume.shape[1] // 2, :, :]
-    else:
-        slice_2d = volume[volume.shape[0] // 2, :, :]
-        delta_slice = delta_volume[delta_volume.shape[0] // 2, :, :]
-
     perturbed_slice = slice_2d + delta_slice
 
     # Medical Windowing (HU Normalization)
     clean_windowed = np.clip(slice_2d, -1000, 400)
     clean_windowed = ((clean_windowed - (-1000)) / (400 - (-1000)) * 255).astype(np.uint8)
 
-    # 2. True Delta Colormapping
+    # 1. True Delta Colormapping
     amplified_delta = delta_slice * 50
     max_val = np.max(np.abs(amplified_delta)) + 1e-5
     # Normalize to [0, 1] centered at 0.5 for the diverging colormap
@@ -62,7 +87,7 @@ else:
     heatmap_rgba = colormap(norm_delta)
     heatmap_rgb = (heatmap_rgba[:, :, :3] * 255).astype(np.uint8)
 
-    # 3. Attack Overlay Blending using PIL Alpha Compositing
+    # 2. Attack Overlay Blending using PIL Alpha Compositing
     clean_pil = Image.fromarray(clean_windowed).convert("RGB")
     heatmap_pil = Image.fromarray(heatmap_rgb)
     # Blend: clean * 0.6 + heatmap * 0.4
