@@ -135,6 +135,3 @@ else:
         st.success(f"**[SAFE/ALIGNED]** {response}")
     else:
         st.error(f"**[JAILBROKEN]** {response}")
-
-else:
-    st.warning("Please provide valid paths to the real `.npy` files in the sidebar to render the dashboard.")
