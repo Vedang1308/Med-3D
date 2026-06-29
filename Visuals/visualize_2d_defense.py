@@ -1,6 +1,7 @@
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
+from PIL import Image
 
 st.set_page_config(page_title="2D Medical VLM Defense Dashboard", layout="wide")
 
@@ -9,36 +10,37 @@ st.markdown("Interactive dashboard demonstrating the impact of our In-Context Le
 
 # --- Helper Functions ---
 @st.cache_data
-def get_clean_image():
+def get_clean_volume():
     """
-    Generates a highly robust synthetic 2D medical lung scan for visualization.
+    Generates a highly robust synthetic 3D medical lung scan for visualization.
     Scaled to simulate Hounsfield Units (HU) between -1000 and 1000.
     """
     x = np.linspace(-3, 3, 256)
     y = np.linspace(-3, 3, 256)
-    X, Y = np.meshgrid(x, y)
+    z = np.linspace(-3, 3, 32)
+    Z, X, Y = np.meshgrid(z, x, y, indexing='ij')
     
     # Create two 'lungs'
-    lung1 = np.exp(-((X - 1)**2 + (Y)**2) / 1.5)
-    lung2 = np.exp(-((X + 1)**2 + (Y)**2) / 1.5)
+    lung1 = np.exp(-((X - 1)**2 + (Y)**2 + Z**2) / 1.5)
+    lung2 = np.exp(-((X + 1)**2 + (Y)**2 + Z**2) / 1.5)
     
     # Add structural noise and 'ribs'
     ribs = np.sin(Y * 10) * 0.1
-    noise = np.random.normal(0, 0.05, (256, 256))
+    noise = np.random.normal(0, 0.05, (32, 256, 256))
     
-    img = lung1 + lung2 + ribs + noise
-    img = np.clip(img, 0, 1)
+    volume = lung1 + lung2 + ribs + noise
+    volume = np.clip(volume, 0, 1)
     
-    # Invert to look like x-ray (bones/tissues bright, lungs dark)
-    img = 1.0 - img
+    # Invert to look like x-ray/CT (bones/tissues bright, lungs dark)
+    volume = 1.0 - volume
     
     # Scale to typical CT Hounsfield Units [-1000, 1000]
-    return img * 2000 - 1000
+    return volume * 2000 - 1000
 
 @st.cache_data
 def get_adversarial_noise(epsilon=10):
     """
-    Simulates targeted PGD adversarial noise in HU scale.
+    Simulates targeted PGD adversarial noise in HU scale for a 2D slice.
     """
     np.random.seed(42) # Fixed seed for consistent visualization
     noise = np.random.uniform(-epsilon, epsilon, (256, 256))
@@ -46,24 +48,22 @@ def get_adversarial_noise(epsilon=10):
     noise = (noise / np.max(np.abs(noise))) * epsilon
     return noise
 
-def apply_medical_window(img, window_min=-1000, window_max=400):
-    """
-    Clips raw tensor to a standard clinical soft-tissue window,
-    then min-max normalizes to [0, 255] uint8 for sharp rendering.
-    """
-    clamped = np.clip(img, window_min, window_max)
-    normalized = (clamped - window_min) / (window_max - window_min)
-    return (normalized * 255).astype(np.uint8)
 
 # --- Process Images ---
-clean_slice = get_clean_image()
-noise = get_adversarial_noise()
-perturbed_slice = clean_slice + noise
+volume = get_clean_volume()
 
-clean_windowed = apply_medical_window(clean_slice)
+# Slice the Correct Anatomical Axis (Middle of Z-axis for Axial plane)
+slice_2d = volume[volume.shape[0] // 2, :, :]
+
+noise = get_adversarial_noise()
+perturbed_slice = slice_2d + noise
+
+# Medical Windowing (HU Normalization)
+clean_windowed = np.clip(slice_2d, -1000, 400)
+clean_windowed = ((clean_windowed - (-1000)) / (400 - (-1000)) * 255).astype(np.uint8)
 
 # 1. Delta Calculation & Colormapping
-delta = perturbed_slice - clean_slice
+delta = perturbed_slice - slice_2d
 amplified_delta = delta * 50
 max_val = np.max(np.abs(amplified_delta)) + 1e-5
 # Normalize to [0, 1] centered at 0.5 for the diverging colormap
@@ -72,10 +72,11 @@ colormap = plt.get_cmap('seismic')
 heatmap_rgba = colormap(norm_delta)
 heatmap_rgb = (heatmap_rgba[:, :, :3] * 255).astype(np.uint8)
 
-# 2. Attack Overlay Blending
-clean_rgb = np.stack([clean_windowed]*3, axis=-1)
-# Native numpy alpha-blending at 0.6 / 0.4 ratio
-overlay = (clean_rgb * 0.6 + heatmap_rgb * 0.4).astype(np.uint8)
+# 2. Attack Overlay Blending using PIL Alpha Compositing
+clean_pil = Image.fromarray(clean_windowed).convert("RGB")
+heatmap_pil = Image.fromarray(heatmap_rgb)
+# Blend: clean * (1.0 - alpha) + heatmap * alpha (0.4 means 60% clean, 40% noise)
+overlay_pil = Image.blend(clean_pil, heatmap_pil, alpha=0.4)
 
 
 # --- Sidebar Controls ---
@@ -99,19 +100,19 @@ scenario = st.sidebar.radio(
 def render_image_pipeline(scenario_num):
     if scenario_num in [1, 2]:
         st.subheader("Visual Pipeline")
-        st.image(clean_windowed, caption="Original Clean 2D Scan (Windowed)", use_column_width=False, width=300)
+        st.image(clean_windowed, caption="Original Clean 2D Scan (Windowed)", use_container_width=False, width=300)
     else:
         st.subheader("Adversarial Visual Pipeline")
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.image(clean_windowed, caption="Original Clean 2D Scan", use_column_width=True)
+            st.image(clean_windowed, caption="Original Clean 2D Scan", use_container_width=True)
             
         with col2:
-            st.image(heatmap_rgb, caption="Amplified PGD Noise (Seismic Heatmap)", use_column_width=True)
+            st.image(heatmap_rgb, caption="Amplified PGD Noise (Seismic Heatmap)", use_container_width=True)
             
         with col3:
-            st.image(overlay, caption="Attack Overlay (Blended)", use_column_width=True)
+            st.image(overlay_pil, caption="Attack Overlay (Blended)", use_container_width=True)
 
 def render_text_response(scenario_num, defense):
     st.markdown("---")
