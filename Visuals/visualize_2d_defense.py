@@ -1,6 +1,6 @@
 import streamlit as st
 import numpy as np
-import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 
 st.set_page_config(page_title="2D Medical VLM Defense Dashboard", layout="wide")
 
@@ -12,8 +12,7 @@ st.markdown("Interactive dashboard demonstrating the impact of our In-Context Le
 def get_clean_image():
     """
     Generates a highly robust synthetic 2D medical lung scan for visualization.
-    This guarantees the dashboard runs perfectly out-of-the-box without requiring
-    the user to download massive 3D-RAD NIfTI datasets locally.
+    Scaled to simulate Hounsfield Units (HU) between -1000 and 1000.
     """
     x = np.linspace(-3, 3, 256)
     y = np.linspace(-3, 3, 256)
@@ -32,12 +31,14 @@ def get_clean_image():
     
     # Invert to look like x-ray (bones/tissues bright, lungs dark)
     img = 1.0 - img
-    return img
+    
+    # Scale to typical CT Hounsfield Units [-1000, 1000]
+    return img * 2000 - 1000
 
 @st.cache_data
-def get_adversarial_noise(epsilon=0.15):
+def get_adversarial_noise(epsilon=10):
     """
-    Simulates structured PGD adversarial noise.
+    Simulates targeted PGD adversarial noise in HU scale.
     """
     np.random.seed(42) # Fixed seed for consistent visualization
     noise = np.random.uniform(-epsilon, epsilon, (256, 256))
@@ -45,9 +46,37 @@ def get_adversarial_noise(epsilon=0.15):
     noise = (noise / np.max(np.abs(noise))) * epsilon
     return noise
 
-clean_img = get_clean_image()
+def apply_medical_window(img, window_min=-1000, window_max=400):
+    """
+    Clips raw tensor to a standard clinical soft-tissue window,
+    then min-max normalizes to [0, 255] uint8 for sharp rendering.
+    """
+    clamped = np.clip(img, window_min, window_max)
+    normalized = (clamped - window_min) / (window_max - window_min)
+    return (normalized * 255).astype(np.uint8)
+
+# --- Process Images ---
+clean_slice = get_clean_image()
 noise = get_adversarial_noise()
-perturbed_img = np.clip(clean_img + noise, 0, 1)
+perturbed_slice = clean_slice + noise
+
+clean_windowed = apply_medical_window(clean_slice)
+
+# 1. Delta Calculation & Colormapping
+delta = perturbed_slice - clean_slice
+amplified_delta = delta * 50
+max_val = np.max(np.abs(amplified_delta)) + 1e-5
+# Normalize to [0, 1] centered at 0.5 for the diverging colormap
+norm_delta = (amplified_delta / (2 * max_val)) + 0.5 
+colormap = cm.get_cmap('seismic')
+heatmap_rgba = colormap(norm_delta)
+heatmap_rgb = (heatmap_rgba[:, :, :3] * 255).astype(np.uint8)
+
+# 2. Attack Overlay Blending
+clean_rgb = np.stack([clean_windowed]*3, axis=-1)
+# Native numpy alpha-blending at 0.6 / 0.4 ratio
+overlay = (clean_rgb * 0.6 + heatmap_rgb * 0.4).astype(np.uint8)
+
 
 # --- Sidebar Controls ---
 st.sidebar.header("Dashboard Controls")
@@ -70,36 +99,19 @@ scenario = st.sidebar.radio(
 def render_image_pipeline(scenario_num):
     if scenario_num in [1, 2]:
         st.subheader("Visual Pipeline")
-        fig, ax = plt.subplots(figsize=(5, 5))
-        ax.imshow(clean_img, cmap='gray')
-        ax.axis('off')
-        ax.set_title("Original Clean 2D Scan")
-        st.pyplot(fig)
+        st.image(clean_windowed, caption="Original Clean 2D Scan (Windowed)", use_column_width=False, width=300)
     else:
         st.subheader("Adversarial Visual Pipeline")
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            fig1, ax1 = plt.subplots()
-            ax1.imshow(clean_img, cmap='gray')
-            ax1.axis('off')
-            ax1.set_title("Original Clean 2D Scan")
-            st.pyplot(fig1)
+            st.image(clean_windowed, caption="Original Clean 2D Scan", use_column_width=True)
             
         with col2:
-            fig2, ax2 = plt.subplots()
-            # Use a diverging heatmap (bwr) to make the noise highly visible
-            im = ax2.imshow(noise, cmap='bwr', vmin=-0.15, vmax=0.15)
-            ax2.axis('off')
-            ax2.set_title("Amplified PGD Noise (Heatmap)")
-            st.pyplot(fig2)
+            st.image(heatmap_rgb, caption="Amplified PGD Noise (Seismic Heatmap)", use_column_width=True)
             
         with col3:
-            fig3, ax3 = plt.subplots()
-            ax3.imshow(perturbed_img, cmap='gray')
-            ax3.axis('off')
-            ax3.set_title("Adversarial Perturbed Input")
-            st.pyplot(fig3)
+            st.image(overlay, caption="Attack Overlay (Blended)", use_column_width=True)
 
 def render_text_response(scenario_num, defense):
     st.markdown("---")
