@@ -1,6 +1,6 @@
 import streamlit as st
 import numpy as np
-import matplotlib.cm as cm
+import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="2D Medical VLM Defense Dashboard", layout="wide")
 
@@ -68,7 +68,7 @@ amplified_delta = delta * 50
 max_val = np.max(np.abs(amplified_delta)) + 1e-5
 # Normalize to [0, 1] centered at 0.5 for the diverging colormap
 norm_delta = (amplified_delta / (2 * max_val)) + 0.5 
-colormap = cm.get_cmap('seismic')
+colormap = plt.get_cmap('seismic')
 heatmap_rgba = colormap(norm_delta)
 heatmap_rgb = (heatmap_rgba[:, :, :3] * 255).astype(np.uint8)
 
