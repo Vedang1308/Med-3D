@@ -2,7 +2,6 @@ import streamlit as st
 import numpy as np
 import os
 import plotly.graph_objects as go
-from scipy.ndimage import zoom
 
 st.set_page_config(page_title="Rotatable 3D Volumetric Dashboard", layout="wide")
 
@@ -44,7 +43,9 @@ def load_and_downsample_volume(path, zoom_factor=0.25):
             raise ValueError(f"Expected 3D data, got shape: {volume.shape}")
             
         # 3. CRITICAL: Downsample to avoid browser crash in Plotly 3D rendering
-        downsampled = zoom(volume, zoom_factor, order=1)
+        # Use simple NumPy slicing to avoid scipy dependency. zoom_factor 0.25 -> step 4
+        step = max(1, int(1 / zoom_factor))
+        downsampled = volume[::step, ::step, ::step]
         return downsampled
         
     except Exception as e:
